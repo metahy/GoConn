@@ -1,5 +1,11 @@
 # 基于Go的WebSocket直播间推送系统
 
+### 运行方法：
+```
+git clone https://github.com/HiramJoyce/GoConn.git
+cd GoConn
+go run *.go
+```
 ### 用户行为分析
 #### 进入直播间：
 - 1、访客进入
