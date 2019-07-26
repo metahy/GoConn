@@ -1,7 +1,7 @@
 package main
 
-// Room maintains the set of active clients and broadcasts messages to the
-// clients.
+// Room maintains the set of active clients and broadcasts messages to the clients.
+// Room代表一个直播间
 type Room struct {
 	// Registered clients.
 	clients map[*Client]bool
@@ -24,8 +24,8 @@ type Room struct {
 
 func newRoom(roomid string, anchor string) *Room {
 	return &Room{
-		roomid: roomid,
-		anchor: anchor,
+		roomid:     roomid,
+		anchor:     anchor,
 		broadcast:  make(chan []byte),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
@@ -54,8 +54,4 @@ func (r *Room) run() {
 			}
 		}
 	}
-}
-
-func (r *Room) num() int {
-	return len(r.clients)
 }

@@ -1,10 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
-	"encoding/json"
 
 	"github.com/gorilla/websocket"
 )
@@ -34,6 +34,7 @@ var upgrader = websocket.Upgrader{
 }
 
 // Client is a middleman between the websocket connection and the hub.
+// Client用于封装一个websocket.Conn，代表一个连接，即一个观众
 type Client struct {
 	// 所在直播间
 	room *Room
@@ -57,26 +58,23 @@ type Client struct {
 // ensures that there is at most one reader on a connection by executing all
 // reads from this goroutine.
 func (c *Client) readPump() {
+	// socket连接断开时执行defer，在此处对用户离开直播间行为进行处理
 	defer func() {
 		if c.room != nil {
-			//c.room.unregister <- c
-			delete(c.room.clients, c)
-			close(c.send)
+			delete(c.room.clients, c) // 移除直播间的当前连接
+			close(c.send)             // 关闭当前连接的发送chan
 			msg := make(map[string]interface{})
 			msg["msgtype"] = 1
-			if c.userid != "" {
+			if c.userid != "" { // 已登录用户提示用户离开直播间
 				msg["msg"] = c.username + "离开直播间"
 				log.Println(c.username, "<-", c.room.roomid, "| 当前人数：", len(c.room.clients))
 				msg["clientnum"] = len(c.room.clients)
-				msgbytes, _ := json.Marshal(msg)
-				c.room.broadcast <- msgbytes
-			} else {
-				//msg["msg"] = "访客离开直播间"
+			} else { // 访客断开连接只推送人数
 				log.Println("访客 <-", c.room.roomid, "| 当前人数：", len(c.room.clients))
 				msg["clientnum"] = len(c.room.clients)
-				msgbytes, _ := json.Marshal(msg)
-				c.room.broadcast <- msgbytes
 			}
+			msgbytes, _ := json.Marshal(msg)
+			c.room.broadcast <- msgbytes
 		}
 		c.conn.Close()
 	}()
@@ -92,7 +90,7 @@ func (c *Client) readPump() {
 			break
 		}
 		log.Println(string(message))
-		//message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
+		// 解析json文本
 		var r map[string]interface{}
 		if json.Unmarshal(message, &r) != nil {
 			continue
@@ -101,13 +99,15 @@ func (c *Client) readPump() {
 		msg := make(map[string]interface{})
 		msg["msgtype"] = msgtype
 		var msgbytes []byte
+		// 根据不同的消息类型分别处理
 		switch msgtype {
-		case 1:	// 进入直播间
+		case 1: // 进入直播间
 			roomid := r["roomid"].(string)
 			if _, ok := rooms[roomid]; !ok {
 				log.Println(roomid, "房间发言频道不存在 -> 创建")
 				// 模拟根据房间号找主播昵称
-				rooms[roomid] = newRoom(roomid, "主播" + roomid)
+				anchor := "主播" + roomid
+				rooms[roomid] = newRoom(roomid, anchor)
 				go rooms[roomid].run()
 			}
 			c.room = rooms[roomid]
@@ -115,39 +115,42 @@ func (c *Client) readPump() {
 			if useridin != nil {
 				userid = useridin.(string)
 			}
-			if userid != "" {
+			if userid != "" { // userid不为空表示为已登录用户
 				c.userid = userid
 				c.username = r["username"].(string)
 				c.room.clients[c] = true
 				log.Println(c.username, "->", roomid, "| 当前人数：", len(c.room.clients))
 				msg["msg"] = c.username + "进入直播间"
-			} else {
+			} else { // 访客
 				c.room.clients[c] = true
 				log.Println("访客 ->", roomid, "| 当前人数：", len(c.room.clients))
-				//msg["msg"] = "访客进入直播间"
 			}
 			msg["clientnum"] = len(c.room.clients)
-		case 2:	// 发弹幕
+		case 2: // 发弹幕
 			words := r["msg"].(string)
 			msg["username"] = c.username
 			msg["msg"] = words
 			log.Println(c.username, "|", c.room.roomid, "->", words)
-		case 3:	// 刷礼物
+		case 3: // 刷礼物
 			msg["username"] = c.username
 			giftlevel := int(r["giftlevel"].(float64))
 			msg["giftlevel"] = giftlevel
 			log.Println(c.username, "|", c.room.roomid, "-> Gift:", giftlevel)
-			if giftlevel == 2 {
+			if giftlevel == 2 { // 礼物等级为高级时需要在全部直播间推送，推送时要带着主播信息
 				msg["anchor"] = c.room.anchor
-				msgbytes, _ := json.Marshal(msg)
-				for _, roomeach := range rooms {
-					roomeach.broadcast <- msgbytes
-				}
-				continue
+				msgbytes, _ := json.Marshal(msg) // 先构造好json，再在循环中使用
+				go pushAllRoom(msgbytes)         // 推送至全部直播间
+				continue                         // 全部推送完成后跳过本次循环避免后面的房间内推送
 			}
 		}
 		msgbytes, _ = json.Marshal(msg)
 		c.room.broadcast <- msgbytes
+	}
+}
+
+func pushAllRoom(msgbytes []byte) {
+	for _, roomeach := range rooms {
+		roomeach.broadcast <- msgbytes
 	}
 }
 
@@ -197,11 +200,13 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 	upgrader.CheckOrigin = func(r *http.Request) bool {
 		return true
 	}
+	// 将请求升级为websocket连接
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
 		return
 	}
+	// 将连接包装为一个client，一个client代表一个观众
 	client := &Client{conn: conn, send: make(chan []byte, 256)}
 
 	// Allow collection of memory referenced by the caller by doing all work in
