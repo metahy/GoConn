@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Chat Example</title>
+<script type="text/javascript">
+window.onload = function () {
+    var conn;
+    var msg = document.getElementById("msg");
+    var log = document.getElementById("log");
+
+    function appendLog(item) {
+        var doScroll = log.scrollTop > log.scrollHeight - log.clientHeight - 1;
+        log.appendChild(item);
+        if (doScroll) {
+            log.scrollTop = log.scrollHeight - log.clientHeight;
+        }
+    }
+
+    document.getElementById("form").onsubmit = function () {
+        if (!conn) {
+            return false;
+        }
+        if (!msg.value) {
+            return false;
+        }
+        conn.send(msg.value);
+        msg.value = "";
+        return false;
+    };
+
+    if (window["WebSocket"]) {
+        conn = new WebSocket("ws://127.0.0.1:8080/ws");
+        conn.onopen = function (evt) {
+            var info = {}
+            info.msgtype = 1
+            info.roomid = "12345"
+            conn.send(JSON.stringify(info))
+        }
+        conn.onclose = function (evt) {
+            var item = document.createElement("div");
+            item.innerHTML = "<b>Connection closed.</b>";
+            appendLog(item);
+        };
+        conn.onmessage = function (evt) {
+            // var messages = evt.data.split('\n');
+            // for (var i = 0; i < messages.length; i++) {
+            //     var item = document.createElement("div");
+            //     item.innerText = messages[i];
+            //     appendLog(item);
+            // }
+            var messages = JSON.parse(evt.data)
+            console.log(messages)
+            switch (messages.msgtype) {
+                case 1:
+                    document.getElementById("num").innerHTML = messages.clientnum
+                    if (messages.msg) {
+                        var item = document.createElement("div");
+                        item.innerText = messages.msg;
+                        appendLog(item);
+                    }
+                    break
+                case 2:
+                    var item = document.createElement("div");
+                    item.innerText = messages.username + ":" + messages.msg;
+                    appendLog(item);
+                    break
+                case 3:
+                    var item = document.createElement("div");
+                    switch (messages.giftlevel) {
+                        case 1:
+                            item.innerText = messages.username + "为主播送出普通礼物";
+                            break
+                        case 2:
+                            item.innerText = messages.username + "为主播" + messages.anchor + "送出高级礼物";
+                            break
+                    }
+                    appendLog(item);
+                    break
+            }
+        };
+    } else {
+        var item = document.createElement("div");
+        item.innerHTML = "<b>Your browser does not support WebSockets.</b>";
+        appendLog(item);
+    }
+};
+</script>
+<style type="text/css">
+html {
+    overflow: hidden;
+}
+
+body {
+    overflow: hidden;
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: gray;
+}
+
+#log {
+    background: white;
+    overflow: auto;
+    width: 100%;
+}
+
+#form {
+    width: 100%;
+    overflow: hidden;
+}
+
+</style>
+</head>
+<body>
+<div>
+    <div style="float: left; width: 60%; max-width: 700px;">
+        <div id="num" style="width: 50px; height: 20px; line-height: 20px; text-align: center; background-color: beige; border-radius: 10px; margin-right: 0px;">0</div>
+        <!-- <video src="static/20190317-231400.mp4" controls style="width: 100%; height: auto;"></video> -->
+        <img src="static/123.jpg" style="width: 100%; height: auto;"/>
+        <div>
+            <input type="button" disabled id="gift1" value="1" />
+            <input type="button" disabled id="gift2" value="2" />
+        </div>
+    </div>
+    <div style="float: left; margin: 20px 0 0 20px;">
+        <div id="log" style="height: 400px;"></div>
+        <form id="form">
+            <input type="submit" disabled value="Send" />
+            <input type="text" id="msg" size="64"/>
+        </form>
+    </div>
+    <div style="clear: both;"></div>
+</div>
+</body>
+</html>
