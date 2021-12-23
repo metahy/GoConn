@@ -2,7 +2,7 @@
 
 ### 运行方法：
 ```
-git clone https://github.com/HiramJoyce/GoConn.git
+git clone https://github.com/metahy/GoConn.git
 cd GoConn
 go run *.go
 ```
